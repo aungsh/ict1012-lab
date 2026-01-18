@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+
+import re
+from gradelib import *
+
+r = Runner(save("xv6.out"))
+
+@test(5, "sleep, no arguments")
+def test_sleep_no_args():
+    r.run_qemu(shell_script([
+        'sleep'
+    ]))
+    r.match(no=["exec .* failed", "$ sleep\n$"])
+
+@test(5, "sleep, returns")
+def test_sleep_returns():
+    r.run_qemu(shell_script([
+        'sleep',
+        'echo OK'
+    ]))
+    r.match('^OK$', no=["exec .* failed", "$ sleep\n$"])
+
+@test(10, "sleep, makes syscall")
+def test_sleep():
+    r.run_qemu(shell_script([
+        'sleep 10',
+        'echo FAIL'
+    ]), stop_breakpoint('sys_pause'))
+    r.match('\\$ sleep 10', no=['FAIL'])
+
+
+@test(10, "memdump, examples")
+def test_memdump_examples1():
+    r.run_qemu(shell_script([ "memdump" ]))
+    r.match('^61810', '^2025',
+            '^a string',
+            '^another',
+            '^1819438967',
+            '^100',
+            '^z',
+            '^xyzzy',
+            '^hello',
+            '^w',
+            '^d')
+
+@test(10, "memdump, format ii, S, p")
+def test_memdump_examples2():
+    r.run_qemu(shell_script([ "echo abcdefgh12345678 | memdump ii",
+                              "echo abcdefgh12345678 | memdump S",
+                              "echo abcdefgh12345678 | memdump p" ]))
+    r.match('^1684234849',
+            '^1751606885',
+            '^abcdefgh12345678',
+            '^6867666564636261')
+    
+run_tests()
