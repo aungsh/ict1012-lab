@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+
+import re
+from gradelib import *
+
+r = Runner(save("xv6.out"))
+
+@test(20, "handshake")
+def test_handshake():
+    r.run_qemu(shell_script([
+        'handshake 2', 'echo OK'
+    ]))
+    r.match('^\\d+: received 2 from child$', '^\\d+: received 2 from parent$', '^OK$')
+
+@test(15, "sniffer")
+def test_attack():
+    secret = random_str(8)
+    r.run_qemu(shell_script([
+        'secret ' + secret,
+        'sniffer',
+        'sniffer'
+    ]))
+    r.match('^'+secret+'.*')
+
+@test(5, "monitor 32 grep")
+def test_monitor_32_grep():
+    r.run_qemu(shell_script([
+        'monitor 32 grep hello README'
+    ]))
+    r.match('^\\d+: syscall read -> \\d+')
+    r.match('^\\d+: syscall read -> \\d+')
+    r.match('^\\d+: syscall read -> \\d+')
+    r.match('^\\d+: syscall read -> 0')
+
+@test(5, "monitor close grep")
+def test_monitor_close_grep():
+    r.run_qemu(shell_script(['monitor 2097152 grep hello README']))
+    r.match('^\\d+: syscall close -> 0')
+    r.match(no=[".* syscall read .*"])
+
+@test(5, "monitor exec + open grep")
+def test_monitor_exec_open_grep():
+    r.run_qemu(shell_script(['monitor 32896 grep hello README']))
+    r.match('^\\d+: syscall exec -> 3')
+    r.match('^\\d+: syscall open -> 3')
+    r.match(no=[".* syscall read .*"])
+
+@test(5, "monitor all grep")
+def test_monitor_all_grep():
+    r.run_qemu(shell_script([
+        'monitor 2147483647 grep hello README'
+    ]))
+    r.match('^\\d+: syscall monitor -> 0')
+    r.match('^\\d+: syscall exec -> 3')
+    r.match('^\\d+: syscall open -> 3')
+    r.match('^\\d+: syscall read -> \\d+')
+    r.match('^\\d+: syscall read -> \\d+')
+    r.match('^\\d+: syscall read -> \\d+')
+    r.match('^\\d+: syscall read -> 0')
+    r.match('^\\d+: syscall close -> 0')
+
+@test(5, "monitor nothing")
+def test_monitor_nothing():
+    r.run_qemu(shell_script([
+        'grep hello README'
+    ]))
+    r.match(no=[".* syscall .*"])
+
+@test(5, "monitor children")
+def test_monitor_children():
+    r.run_qemu(shell_script([
+        'monitor 2 usertests forkforkfork'
+    ]))
+    r.match('^\\d+: syscall fork -> 4')
+    r.match('^\\d+: syscall fork -> \\d+')
+    r.match('^\\d+: syscall fork -> \\d+')
+    r.match('^\\d+: syscall fork -> -1')
+    r.match('^OK')
+
+run_tests()
+
+
+
