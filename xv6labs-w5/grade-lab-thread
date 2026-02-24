@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+
+import re
+import subprocess
+from gradelib import *
+
+
+r = Runner(save("xv6.out"))
+
+@test(20, "uthread")
+def test_uthread():
+    r.run_qemu(shell_script([
+        'uthread'
+    ]))
+    expected = ['thread_a started', 'thread_b started', 'thread_c started']
+    expected.extend(['thread_%s %d' % (tid, n) for n in range(100) for tid in ('c', 'a', 'b')])
+    expected.extend(['thread_c: exit after 100', 'thread_a: exit after 100', 'thread_b: exit after 100'])
+    expected.append('thread_schedule: no runnable threads')
+    if not re.findall('\n'.join(expected), r.qemu.output, re.M):
+        raise AssertionError('Output does not match expected output')
+
+
+import subprocess
+import re
+
+# ph task: without locks, 1 thread. 
+# Expected: 0 missing keys because there is no concurrency.
+@test(10, "ph_no_locks_single")
+def test_ph_no_locks_single():
+    subprocess.run(['make', 'ph-without-locks'], check=True)
+    # Run with 1 thread
+    result = subprocess.run(['./ph-without-locks', '1'], stdout=subprocess.PIPE, check=True)
+    out = result.stdout.decode("utf-8")
+    
+    # Extract missing keys count for each thread (only 1 thread here)
+    matches = re.findall(r'^\d+: (\d+) keys missing$', out, re.MULTILINE)
+    
+    # Check that the thread reported 0 missing keys
+    assert_equal(len(matches), 1)
+    assert_equal(int(matches[0]), 0)
+
+# ph task: without locks, 2 threads.
+# Expected: Missing keys > 0 due to race conditions in the put() function.
+@test(10, "ph_no_locks_multi")
+def test_ph_no_locks_multi():
+    subprocess.run(['make', 'ph-without-locks'], check=True)
+    # Run with 2 threads
+    result = subprocess.run(['./ph-without-locks', '2'], stdout=subprocess.PIPE, check=True)
+    out = result.stdout.decode("utf-8")
+    
+    # Extract missing keys count for both threads
+    matches = re.findall(r'^\d+: (\d+) keys missing$', out, re.MULTILINE)
+    
+    # Check that both threads reported their results
+    assert_equal(len(matches), 2)
+    
+    # Sum the missing keys from both threads
+    total_missing = int(matches[0]) + int(matches[1])
+    
+    # In a version without locks, total_missing should be > 0
+    if total_missing <= 0:
+        raise AssertionError("Expected missing keys with 2 threads, but got 0. Race condition did not trigger.")
+    
+    print(f"Test passed: Detected {total_missing} missing keys due to race conditions.")   
+
+    
+# test the first ph task: add locks to eliminate the missing keys.
+@test(10, "ph_safe")
+def test_ph_safe():
+    subprocess.run(['make', 'ph-with-mutex-locks'], check=True)
+    result = subprocess.run(['./ph-with-mutex-locks', '2'], stdout=subprocess.PIPE, check=True)
+    out = result.stdout.decode("utf-8")
+    matches = re.findall(r'^\d+: (\d+) keys missing$', out, re.MULTILINE)
+    assert_equal(len(matches), 2)
+    assert_equal(int(matches[0]), 0)
+    assert_equal(int(matches[1]), 0)
+
+# test the second ph task: locking that allows put() parallelism
+@test(10, "ph_fast")
+def test_ph_fast():
+    subprocess.run(['make', 'ph-with-mutex-locks'], check=True)
+    result = subprocess.run(['./ph-with-mutex-locks', '2'], stdout=subprocess.PIPE, check=True)
+    out = result.stdout.decode("utf-8")
+    rate2 = re.findall(r' (\d+) puts.second$', out, re.MULTILINE)
+    assert_equal(len(rate2), 1)
+    result = subprocess.run(['./ph-with-mutex-locks', '1'], stdout=subprocess.PIPE)
+    out = result.stdout.decode("utf-8")
+    rate1 = re.findall(r' (\d+) puts.second$', out, re.MULTILINE)
+    assert_equal(len(rate1), 1)
+    rate1 = float(rate1[0])
+    rate2 = float(rate2[0])
+    # demand that 2 threads yield at least 1.25x the
+    # throughput of a single thread.
+    if rate2 < 1.25 * rate1:
+        raise AssertionError('Parallel put() speedup is less than 1.25x')
+
+run_tests()
+
