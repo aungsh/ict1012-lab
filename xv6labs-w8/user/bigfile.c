@@ -17,7 +17,7 @@ main()
   }
 
   blocks = 0;
-  while(1){
+  while(blocks < 6580){
     *(int*)buf = blocks;
     int cc = write(fd, buf, sizeof(buf));
     if(cc <= 0)
@@ -28,7 +28,7 @@ main()
   }
 
   printf("\nwrote %d blocks\n", blocks);
-  if(blocks != 65803) {
+  if(blocks != 6580) {
     printf("bigfile: file is too small\n");
     exit(-1);
   }

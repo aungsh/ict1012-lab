@@ -189,7 +189,7 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_bigfile\
-
+	$U/_symlinktest\
 
 ifeq ($(LAB),$(filter $(LAB), lock))
 UPROGS += \
