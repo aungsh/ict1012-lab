@@ -151,9 +151,15 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
 // ICT1012 Lab 4 ----------------
-
-
-
+  for(int i = 0; i < MAX_VMA; i++){
+    p->vmas[i].valid = 0;
+    p->vmas[i].addr = 0;
+    p->vmas[i].length = 0;
+    p->vmas[i].prot = 0;
+    p->vmas[i].flags = 0;
+    p->vmas[i].f = 0;
+    p->vmas[i].offset = 0;
+  }
 //-------------------------------
 
   return p;
@@ -284,23 +290,12 @@ kfork(void)
   np->sz = p->sz;
 
 // ICT1012 Lab 4 ----------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  for(i = 0; i < MAX_VMA; i++){
+    np->vmas[i] = p->vmas[i];
+    if(np->vmas[i].valid){
+      filedup(np->vmas[i].f);
+    }
+  }
 //-------------------------------
 
   // copy saved user registers.
@@ -415,18 +410,13 @@ kexit(int status)
     panic("init exiting");
 
 // ICT1012 Lab 4 ----------------
-
-
-
-
-
-
-
-
-
-
-
-
+  for(int i = 0; i < MAX_VMA; i++){
+    if(p->vmas[i].valid){
+      vma_unmap(p, &p->vmas[i], p->vmas[i].addr, p->vmas[i].length);
+      fileclose(p->vmas[i].f);
+      p->vmas[i].valid = 0;
+    }
+  }
 //-------------------------------
 
   // Close all open files.

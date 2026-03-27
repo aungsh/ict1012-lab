@@ -123,7 +123,16 @@ usertrap(void)
       // 1. Check if this virtual address is within a valid VMA
       struct vma *v = 0;
 
-      // ... code here ...
+      for(int i = 0; i < MAX_VMA; i++){
+        if(p->vmas[i].valid == 0)
+          continue;
+        uint64 start = p->vmas[i].addr;
+        uint64 end = p->vmas[i].addr + p->vmas[i].length;
+        if(va >= start && va < end){
+          v = &p->vmas[i];
+          break;
+        }
+      }
 
       
       
@@ -135,7 +144,13 @@ usertrap(void)
         // Check protection and flags
         // call mmap_handler, which is implemented above
 
-        // ... code ...
+        if(r_scause() == 15 && ((v->prot & PROT_WRITE) == 0)){
+          setkilled(p);
+        } else {
+          if(mmap_handler(va, v) != 0){
+            setkilled(p);
+          }
+        }
 
 
 
@@ -161,7 +176,9 @@ usertrap(void)
           // FIX for munmap_noaccess: Only allow lazy allocation for the heap
           if(va < p->sz && va >= p->trapframe->sp) {
 
-            // ... code ...
+            if(vmfault(p->pagetable, va, 0) == 0){
+              setkilled(p);
+            }
 
 
 

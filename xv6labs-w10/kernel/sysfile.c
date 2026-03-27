@@ -509,15 +509,133 @@ sys_pipe(void)
 uint64
 sys_mmap(void)
 {
+  uint64 uaddr;
+  int length;
+  int prot;
+  int flags;
+  int fd;
+  int offset;
+  struct file *f = 0;
 
-  return -1;
+  argaddr(0, &uaddr);
+  argint(1, &length);
+  argint(2, &prot);
+  argint(3, &flags);
+  if(argfd(4, &fd, &f) < 0)
+    return -1;
+  argint(5, &offset);
+
+  // Lab assumptions: addr is ignored (always 0), offset is 0.
+  if(length <= 0)
+    return -1;
+  if(offset != 0)
+    return -1;
+  if((flags != MAP_SHARED) && (flags != MAP_PRIVATE))
+    return -1;
+
+  // Must at least be readable.
+  if(f->readable == 0)
+    return -1;
+
+  // Cannot create a shared writable mapping if the file isn't writable.
+  if((flags & MAP_SHARED) && (prot & PROT_WRITE) && f->writable == 0)
+    return -1;
+
+  struct proc *p = myproc();
+
+  // Round up to full pages.
+  int len = PGROUNDUP(length);
+
+  // Find a free VMA slot.
+  struct vma *v = 0;
+  for(int i = 0; i < MAX_VMA; i++){
+    if(p->vmas[i].valid == 0){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+  if(v == 0)
+    return -1;
+
+  // Find a mapping address in high memory, above the heap.
+  // Simple strategy: pack VMAs starting at 0x40000000.
+  uint64 base = 0x40000000;
+  uint64 top = base;
+  for(int i = 0; i < MAX_VMA; i++){
+    if(p->vmas[i].valid){
+      uint64 end = p->vmas[i].addr + p->vmas[i].length;
+      if(end > top)
+        top = end;
+    }
+  }
+  uint64 va = PGROUNDUP(top);
+
+  // Avoid overlapping the process heap.
+  if(va < p->sz)
+    va = PGROUNDUP(p->sz);
+
+  // Initialize VMA metadata.
+  v->valid = 1;
+  v->addr = va;
+  v->length = len;
+  v->prot = prot;
+  v->flags = flags;
+  v->offset = 0;
+  v->f = filedup(f);
+
+  return va;
 }
 
 // implement sys_munmap
 uint64
 sys_munmap(void)
 {
+  uint64 addr;
+  int length;
 
-  return -1;
+  argaddr(0, &addr);
+  argint(1, &length);
+  if(length <= 0)
+    return -1;
+
+  struct proc *p = myproc();
+  int len = PGROUNDUP(length);
+
+  // Find the VMA that contains [addr, addr+len).
+  struct vma *v = 0;
+  for(int i = 0; i < MAX_VMA; i++){
+    if(p->vmas[i].valid == 0)
+      continue;
+    uint64 start = p->vmas[i].addr;
+    uint64 end = p->vmas[i].addr + p->vmas[i].length;
+    if(addr >= start && addr + len <= end){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  // If there's no mapping, nothing to do.
+  if(v == 0)
+    return 0;
+
+  vma_unmap(p, v, addr, len);
+
+  // Update VMA metadata: only edge-unmaps are required by the lab.
+  if(addr == v->addr && len == v->length){
+    fileclose(v->f);
+    v->valid = 0;
+  } else if(addr == v->addr){
+    v->addr += len;
+    v->offset += len;
+    v->length -= len;
+  } else if(addr + len == v->addr + v->length){
+    v->length -= len;
+  } else {
+    // Not required to support punching a hole.
+    return -1;
+  }
+
+  sfence_vma();
+  return 0;
 }
 //-------------------------------
